@@ -1,0 +1,79 @@
+### OSX ###
+*.DS_Store
+.AppleDouble
+.LSOverride
+
+### Python ###
+__pycache__/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pyenv
+.python-version
+
+# virtualenv
+.env
+env/
+.venv
+venv/
+ENV/
+
+### Vim ###
+# swap
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+[._]s[a-v][a-z]
+[._]sw[a-p]
+# session
+Session.vim
+# temporary
+.netrwhist
+*~
+# auto-generated tag files
+tags
+
+### C ###
+# Prerequisites
+*.d
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Static Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared Libraries 
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+#folders
+scratch/
+.clangd/
+.cache/
+.vim/
+
+# Build meta data for vim
+compile_commands.json
