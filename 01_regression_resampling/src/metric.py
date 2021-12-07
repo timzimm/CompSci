@@ -1,14 +1,18 @@
 import numpy as np
 
 
-def mse(data, model):
+def squared_error(data, prediction):
     data = data.flatten()
-    model = model.flatten()
-    return 1 / data.shape[0] * np.dot(data - model, data - model)
+    prediction = prediction.flatten()
+    return np.dot(data - prediction, data - prediction)
 
 
-def r_score(data, model):
+def mse(data, prediction):
+    return 1 / data.shape[0] * squared_error(data, prediction)
+
+
+def r_score(data, prediction):
     data = data.flatten()
-    model = model.flatten()
-    mean = np.mean(model)
-    return 1 - data.shape[0] * mse(data, model) / np.dot(data - mean, data - mean)
+    prediction = prediction.flatten()
+    mean = np.mean(prediction)
+    return 1 - data.shape[0] * mse(data, prediction) / np.dot(data - mean, data - mean)
