@@ -5,13 +5,13 @@ from collections import deque  # fixed size FIFO queue
 import types
 
 
-class LinearModel(ABC):
+class Predictor(ABC):
     def __init__(self):
         self.params = None
 
     @abstractmethod
     def fit(self, X, y):
-        pass
+        return self
 
     def predict(self, X):
         return X @ self.params
@@ -23,15 +23,16 @@ class LinearModel(ABC):
         return 1 - sq_error / np.dot(y - mean, y - mean)
 
 
-class OrdinaryLeastSquare(LinearModel):
+class OrdinaryLeastSquare(Predictor):
     def __init__(self):
         super().__init__()
 
     def fit(self, X, y):
         self.params = np.linalg.pinv(X.T @ X) @ X.T @ y
+        return self
 
 
-class RidgeRegression(LinearModel):
+class RidgeRegression(Predictor):
     def __init__(self, penalty):
         super().__init__()
         self.penalty = penalty
@@ -40,9 +41,10 @@ class RidgeRegression(LinearModel):
         p = X.shape[-1]
         # Matrix inverse exists for all  penalities > 0 (symmetric + positive-definit)
         self.params = np.linalg.inv(X.T @ X + self.penalty * np.eye(p, p)) @ X.T @ y
+        return self
 
 
-class StochasticGradientDescent(LinearModel):
+class StochasticGradientDescent(Predictor):
     def __init__(
         self,
         loss="squared_error",
@@ -167,14 +169,15 @@ class StochasticGradientDescent(LinearModel):
                 )
 
             # After each epoch we check for early convergence by computing the R2-score.
-            # Notice if early_stopping=False, we use the entire training set to compute the
-            # score (X_train = X_test = X)
-            # Define convergence as improving R2 by less than tol over the last n_iter_no_change epochs.
+            # Notice if early_stopping=False, we use the entire training set to
+            # compute the score (X_train = X_test = X)
+            # Define convergence as improving R2 by less than tol over the last
+            # n_iter_no_change epochs.
             # This includes the case of decreasing R2 (delta_score < 0)
             if delta_score < self.tol:
                 # Pick best parameters within the last n_iter_no_change epochs
                 self.param = param_history[np.argmax(score_history)]
-                return
+                return self
 
         if self.verbose:
             print("Maximum number of epochs reached.")
