@@ -27,13 +27,13 @@ class Standardization(Transformation):
 
     def fit(self, X):
         if X.shape[1] > 1:
-            self.mu = np.mean(X[:, 1:], axis=0)
-            self.sigma = np.std(X[:, 1:], axis=0)
+            self.mu = np.mean(X, axis=0)
+            self.sigma = np.std(X, axis=0)
         return self
 
     def transform(self, X):
         if X.shape[1] > 1:
-            return np.c_[(X[:, 0], (X[:, 1:] - self.mu) / self.sigma)]
+            return (X - self.mu) / self.sigma
         else:
             return X
 
