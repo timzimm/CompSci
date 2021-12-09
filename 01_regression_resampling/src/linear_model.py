@@ -7,14 +7,15 @@ import types
 
 class Predictor(ABC):
     def __init__(self):
-        self.params = None
+        self.betas = None
+        self.beta0 = None
 
     @abstractmethod
     def fit(self, X, y):
-        return self
+        """Fit the predictor given design matrix X and target vector y"""
 
     def predict(self, X):
-        return X @ self.params
+        return X @ self.betas + self.beta0
 
     def score(self, X, y):
         model = self.predict(X)
@@ -22,13 +23,28 @@ class Predictor(ABC):
         sq_error = np.dot(y - model, y - model)
         return 1 - sq_error / np.dot(y - mean, y - mean)
 
+    def _center_data(self, X, y):
+        X_mean = np.mean(X, axis=0)
+        y_mean = np.mean(y)
+
+        return (X - X_mean), X_mean, y - y_mean, y_mean
+
+    def _compute_intercept(self, X_mean, y_mean):
+        self.beta0 = y_mean - X_mean.T @ self.betas
+
 
 class OrdinaryLeastSquare(Predictor):
     def __init__(self):
         super().__init__()
 
     def fit(self, X, y):
-        self.params = np.linalg.pinv(X.T @ X) @ X.T @ y
+
+        X, X_mean, y, y_mean = self._center_data(X, y)
+
+        self.betas = np.linalg.pinv(X.T @ X) @ X.T @ y
+
+        self._compute_intercept(X_mean, y_mean)
+
         return self
 
 
@@ -38,9 +54,15 @@ class RidgeRegression(Predictor):
         self.penalty = penalty
 
     def fit(self, X, y):
+
+        X, X_mean, y, y_mean = self._center_data(X, y)
+
         p = X.shape[-1]
-        # Matrix inverse exists for all  penalities > 0 (symmetric + positive-definit)
-        self.params = np.linalg.inv(X.T @ X + self.penalty * np.eye(p, p)) @ X.T @ y
+        # Matrix inverse exists for all penalities > 0 (symmetric + positive-definit)
+        self.betas = np.linalg.inv(X.T @ X + self.penalty * np.eye(p, p)) @ X.T @ y
+
+        self._compute_intercept(X_mean, y_mean)
+
         return self
 
 

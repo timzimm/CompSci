@@ -1,7 +1,3 @@
-import matplotlib.pyplot as plt
-import itertools
-import seaborn as sns
-
 """
 To use functions defined here in your own scriptwrite:
 
@@ -48,3 +44,13 @@ def set_size(width, fraction=1, ratio=(5 ** 0.5 - 1) / 2, subplots=(1, 1)):
     fig_height_in = fig_width_in * ratio * (subplots[0] / subplots[1])
 
     return (fig_width_in, fig_height_in)
+
+
+def set_color_cycle(mpl, cmap, ncolors):
+    import cycler
+    import numpy as np
+    import seaborn as sns
+
+    print("test")
+    color = sns.color_palette(cmap, as_cmap=True)(np.linspace(0, 1, ncolors))
+    mpl.pyplot.rcParams["axes.prop_cycle"] = cycler.cycler("color", color)
