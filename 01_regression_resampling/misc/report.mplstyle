@@ -1,18 +1,18 @@
 lines.linewidth:    2
 
 text.usetex:        True
+text.latex.preamble : \usepackage{amsfonts}
 
 font.family :       serif
 font.serif  :       cm
-font.size:          11.0
+font.size:          10
 
-legend.fontsize:    11
+legend.fontsize:    10
 legend.frameon:     False
 
-axes.labelsize:     11     
+axes.labelsize:     10     
 axes.xmargin:       0
-axes.grid.axis:     both
-axes.grid.which:    major
+axes.grid:          True
 
 savefig.format:     pdf
 savefig.bbox:       tight
