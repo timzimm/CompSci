@@ -7,15 +7,17 @@ from scipy.special import expit
 
 
 class Predictor(ABC):
-    def __init__(self):
-        self.params = None
+    def __init__(self, fit_intercept):
+        self.betas = None
+        self.intercept = None
+        self.fit_intercept = fit_intercept
 
     @abstractmethod
     def fit(self, X, y):
-        return self
+        """Fit the predictor given design matrix X and target vector y"""
 
     def predict(self, X):
-        return X @ self.params
+        return X @ self.betas + self.intercept
 
     def score(self, X, y):
         model = self.predict(X)
@@ -23,25 +25,52 @@ class Predictor(ABC):
         sq_error = np.dot(y - model, y - model)
         return 1 - sq_error / np.dot(y - mean, y - mean)
 
+    def _center_data(self, X, y):
+        if not self.fit_intercept:
+            return X, 0.0, y, 0.0
+
+        X_mean = np.mean(X, axis=0)
+        y_mean = np.mean(y)
+
+        return (X - X_mean), X_mean, y - y_mean, y_mean
+
+    def _compute_intercept(self, X_mean, y_mean):
+        if not self.fit_intercept:
+            self.intercept = 0.0
+        else:
+            self.intercept = y_mean - X_mean.T @ self.betas
+
 
 class OrdinaryLeastSquare(Predictor):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, fit_intercept=True):
+        super().__init__(fit_intercept)
 
     def fit(self, X, y):
-        self.params = np.linalg.pinv(X.T @ X) @ X.T @ y
+
+        X, X_mean, y, y_mean = self._center_data(X, y)
+
+        self.betas = np.linalg.pinv(X.T @ X) @ X.T @ y
+
+        self._compute_intercept(X_mean, y_mean)
+
         return self
 
 
 class RidgeRegression(Predictor):
-    def __init__(self, penalty):
-        super().__init__()
+    def __init__(self, penalty, fit_intercept=True):
+        super().__init__(fit_intercept)
         self.penalty = penalty
 
     def fit(self, X, y):
+
+        X, X_mean, y, y_mean = self._center_data(X, y)
+
         p = X.shape[-1]
-        # Matrix inverse exists for all  penalities > 0 (symmetric + positive-definit)
-        self.params = np.linalg.inv(X.T @ X + self.penalty * np.eye(p, p)) @ X.T @ y
+        # Matrix inverse exists for all penalities > 0 (symmetric + positive-definit)
+        self.betas = np.linalg.inv(X.T @ X + self.penalty * np.eye(p, p)) @ X.T @ y
+
+        self._compute_intercept(X_mean, y_mean)
+
         return self
 
 
