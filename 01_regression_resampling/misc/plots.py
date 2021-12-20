@@ -1,3 +1,8 @@
+import matplotlib.pyplot as plt
+import itertools
+import seaborn as sns
+import numpy as np
+
 """
 To use functions defined here in your own scriptwrite:
 
@@ -54,3 +59,17 @@ def set_color_cycle(mpl, cmap, ncolors):
     print("test")
     color = sns.color_palette(cmap, as_cmap=True)(np.linspace(0, 1, ncolors))
     mpl.pyplot.rcParams["axes.prop_cycle"] = cycler.cycler("color", color)
+
+
+def annotate_imshow(D, round_val=2, txt_size=6, vmax=1, vmin=0):
+    plt.imshow(D, aspect="auto", vmax=vmax, vmin=vmin)
+    for (j, i), label in np.ndenumerate(D):
+        if label != 0:
+            plt.text(
+                i,
+                j,
+                round(label, round_val),
+                ha="center",
+                va="center",
+                fontsize=txt_size,
+            )

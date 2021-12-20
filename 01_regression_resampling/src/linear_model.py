@@ -3,6 +3,7 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from collections import deque  # fixed size FIFO queue
 import types
+from scipy.special import expit
 
 
 class Predictor(ABC):
@@ -59,6 +60,7 @@ class StochasticGradientDescent(Predictor):
         n_iter_no_change=5,
         tol=0.001,
         verbose=False,
+        l2_penalty=0
     ):
         super().__init__()
         self.loss = loss
@@ -73,6 +75,7 @@ class StochasticGradientDescent(Predictor):
         self.validation_fraction = validation_fraction
         self.n_iter_no_change = n_iter_no_change
         self.verbose = verbose
+        self.l2_penalty = l2_penalty
 
     def __loss(self, X, y):
         y_pred = self.predict(X)
@@ -82,6 +85,8 @@ class StochasticGradientDescent(Predictor):
             return np.dot(y - y_pred, y - y_pred) + self.penalty * np.dot(
                 self.params, self.params
             )
+        if self.loss == 'cross_entropy':
+            return -(np.dot(y,np.log(expit(y_pred)))+np.dot((1-y),np.log(1-expit(y_pred))))
 
     def __gradient_loss(self, X, y):
         y_pred = self.predict(X)
@@ -89,6 +94,8 @@ class StochasticGradientDescent(Predictor):
             return 2 * X.T @ (y_pred - y)
         if self.loss == "ridge":
             return 2 * X.T @ (y_pred - y) + 2 * self.penalty * self.params
+        if self.loss == 'cross_entropy':
+            return -(X.T)@(y-expit(y_pred)) + 2 * self.l2_penalty * self.params
 
     def fit(self, X, y):
         p = X.shape[-1]
@@ -162,7 +169,7 @@ class StochasticGradientDescent(Predictor):
 
             param_history.appendleft(self.params)
             score_history.appendleft(self.score(X_test, y_test))
-            delta_score = score_history[0] - score_history[-1]
+            delta_score = np.abs(score_history[0] - score_history[-1])
             if self.verbose:
                 print(
                     f"Epoch {epoch}/{self.max_epochs}\t Score: {score_history[0]}\t dScore: {delta_score}"
