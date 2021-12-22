@@ -24,7 +24,7 @@ Several dependencies are required:
 
 Please make sure that all dependcies are installed in your local python (3)
 environment. For convenience, we provide a 
-[conda environment file](config/env.yaml) to speed up the process of getting
+[conda environment file](./config/env.yml) to speed up the process of getting
 started.
 
 ## How to get it?
