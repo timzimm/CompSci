@@ -5,6 +5,8 @@ from collections import deque  # fixed size FIFO queue
 import types
 from scipy.special import expit
 
+from stochastic_gradient_descent import StochasticGradientDescent
+
 
 class Predictor(ABC):
     def __init__(self, fit_intercept):
@@ -42,14 +44,31 @@ class Predictor(ABC):
 
 
 class OrdinaryLeastSquare(Predictor):
-    def __init__(self, fit_intercept=True):
+    def __init__(self, fit_intercept=True, solver="pinv", **sgd_kwargs):
         super().__init__(fit_intercept)
+
+        if not (solver == "pinv" or solver == "sgd"):
+            raise ValueError("unsupported solver")
+
+        self.solver = solver
+        self.sgd = StochasticGradientDescent(**sgd_kwargs) if solver == "sgd" else None
+
+    def __loss(self, X, y, p):
+        y_pred = X @ p
+        return 1.0 / (2 * X.shape[0]) * np.dot(y - y_pred, y - y_pred)
+
+    def gradient_loss(self, X, y, p):
+        y_pred = X @ p
+        return 1.0 / X.shape[0] * X.T @ (y_pred - y)
 
     def fit(self, X, y):
 
         X, X_mean, y, y_mean = self._center_data(X, y)
 
-        self.betas = np.linalg.pinv(X.T @ X) @ X.T @ y
+        if self.solver == "pinv":
+            self.betas = np.linalg.pinv(X.T @ X) @ X.T @ y
+        if self.solver == "sgd":
+            self.betas = self.sgd.minimize(self.__loss, self.gradient_loss, X, y)
 
         self._compute_intercept(X_mean, y_mean)
 
