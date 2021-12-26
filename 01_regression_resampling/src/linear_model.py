@@ -16,7 +16,7 @@ class Predictor(ABC):
 
     @abstractmethod
     def fit(self, X, y):
-        """Fit the predictor given design matrix X and target vector y"""
+        """Fits the predictor given design matrix X and target vector y"""
 
     def predict(self, X):
         return X @ self.betas + self.intercept
@@ -53,13 +53,13 @@ class OrdinaryLeastSquare(Predictor):
         self.solver = solver
         self.sgd = StochasticGradientDescent(**sgd_kwargs) if solver == "sgd" else None
 
-    def __loss(self, X, y, p):
+    def _loss(self, X, y, p):
         y_pred = X @ p
-        return 1.0 / (2 * X.shape[0]) * np.dot(y - y_pred, y - y_pred)
+        return np.dot(y - y_pred, y - y_pred)
 
-    def gradient_loss(self, X, y, p):
+    def _gradient_loss(self, X, y, p):
         y_pred = X @ p
-        return 1.0 / X.shape[0] * X.T @ (y_pred - y)
+        return 2 * X.T @ (y_pred - y)
 
     def fit(self, X, y):
 
@@ -68,7 +68,7 @@ class OrdinaryLeastSquare(Predictor):
         if self.solver == "pinv":
             self.betas = np.linalg.pinv(X.T @ X) @ X.T @ y
         if self.solver == "sgd":
-            self.betas = self.sgd.minimize(self.__loss, self.gradient_loss, X, y)
+            self.betas = self.sgd.minimize(self._loss, self._gradient_loss, X, y)
 
         self._compute_intercept(X_mean, y_mean)
 
@@ -76,24 +76,41 @@ class OrdinaryLeastSquare(Predictor):
 
 
 class RidgeRegression(Predictor):
-    def __init__(self, penalty, fit_intercept=True):
+    def __init__(self, penalty, fit_intercept=True, solver="inv", **sgd_kwargs):
         super().__init__(fit_intercept)
+
         self.penalty = penalty
+        if not (solver == "inv" or solver == "sgd"):
+            raise ValueError("unsupported solver")
+
+        self.solver = solver
+        self.sgd = StochasticGradientDescent(**sgd_kwargs) if solver == "sgd" else None
+
+    def _loss(self, X, y, p):
+        y_pred = X @ p
+        return np.dot(y - y_pred, y - y_pred) + self.penalty * np.dot(p, p)
+
+    def _gradient_loss(self, X, y, p):
+        y_pred = X @ p
+        return 2 * (X.T @ (y_pred - y) + self.penalty * p)
 
     def fit(self, X, y):
 
         X, X_mean, y, y_mean = self._center_data(X, y)
 
-        p = X.shape[-1]
-        # Matrix inverse exists for all penalities > 0 (symmetric + positive-definit)
-        self.betas = np.linalg.inv(X.T @ X + self.penalty * np.eye(p, p)) @ X.T @ y
+        if self.solver == "inv":
+            p = X.shape[-1]
+            # Matrix inverse exists for all penalty > 0(symmetric + positive-definite)
+            self.betas = np.linalg.inv(X.T @ X + self.penalty * np.eye(p, p)) @ X.T @ y
+        if self.solver == "sgd":
+            self.betas = self.sgd.minimize(self._loss, self._gradient_loss, X, y)
 
         self._compute_intercept(X_mean, y_mean)
 
         return self
 
 
-class StochasticGradientDescent(Predictor):
+class StochasticGradientDescent_Deprecated(Predictor):
     def __init__(
         self,
         loss="squared_error",
@@ -108,7 +125,7 @@ class StochasticGradientDescent(Predictor):
         n_iter_no_change=5,
         tol=0.001,
         verbose=False,
-        l2_penalty=0
+        l2_penalty=0,
     ):
         super().__init__()
         self.loss = loss
@@ -130,20 +147,23 @@ class StochasticGradientDescent(Predictor):
         if self.loss == "squared_error":
             return np.dot(y - y_pred, y - y_pred)
         if self.loss == "ridge":
-            return np.dot(y - y_pred, y - y_pred) + self.penalty * np.dot(
+            return np.dot(y - y_pred, y - y_pred) + self.l2_penalty * np.dot(
                 self.params, self.params
             )
-        if self.loss == 'cross_entropy':
-            return -(np.dot(y,np.log(expit(y_pred)))+np.dot((1-y),np.log(1-expit(y_pred))))
+        if self.loss == "cross_entropy":
+            return -(
+                np.dot(y, np.log(expit(y_pred)))
+                + np.dot((1 - y), np.log(1 - expit(y_pred)))
+            )
 
     def __gradient_loss(self, X, y):
         y_pred = self.predict(X)
         if self.loss == "squared_error":
             return 2 * X.T @ (y_pred - y)
         if self.loss == "ridge":
-            return 2 * X.T @ (y_pred - y) + 2 * self.penalty * self.params
-        if self.loss == 'cross_entropy':
-            return -(X.T)@(y-expit(y_pred)) + 2 * self.l2_penalty * self.params
+            return 2 * X.T @ (y_pred - y) + 2 * self.l2_penalty * self.params
+        if self.loss == "cross_entropy":
+            return -(X.T) @ (y - expit(y_pred)) + 2 * self.l2_penalty * self.params
 
     def fit(self, X, y):
         p = X.shape[-1]
