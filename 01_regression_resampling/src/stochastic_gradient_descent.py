@@ -1,6 +1,62 @@
 import numpy as np
 from collections import deque  # fixed size FIFO queue
 import types
+from abc import ABC, abstractmethod
+
+
+class Scheduler:
+    def __init__(self, log):
+        self.log = log
+        self.learning_rates = []
+
+    def __log(self, learning_rate):
+        if self.log:
+            self.learning_rates.append(learning_rate)
+        return learning_rate
+
+
+class Constant(Scheduler):
+    def __init__(self, log=False, eta0=0.01):
+        super().__init__(log)
+        self.eta0 = eta0
+
+    def __call__(self, t, grad):
+        return self._Scheduler__log(self.eta0)
+
+
+class InverseScaling(Scheduler):
+    def __init__(self, log=False, eta0=0.01, power_t=0.125):
+        super().__init__(log)
+        self.eta0 = eta0
+        self.power_t = power_t
+
+    def __call__(self, t, grad):
+        return self._Scheduler__log(self.eta0 / t ** self.power_t)
+
+
+class AdaGrad(Scheduler):
+    def __init__(self, log=False, eta0=0.01, epsilon=1e-8):
+        super().__init__(log)
+        self.eta0 = eta0
+        self.epsilon = epsilon
+        self.g2_t = 0
+
+    def __call__(self, t, grad):
+        self.g2_t += grad ** 2
+        return self._Scheduler__log(self.eta0 / np.sqrt(self.epsilon + self.g2_t))
+
+
+class RMSProp(Scheduler):
+    def __init__(self, log=False, eta0=0.01, beta=0.9, epsilon=1e-8):
+        super().__init__(log)
+        self.eta0 = eta0
+        self.beta = beta
+        self.epsilon = epsilon
+        self.g2_t_avg = 0
+
+    def __call__(self, t, grad):
+        self.g2_t_avg = self.beta * self.g2_t_avg + (1 - self.beta) * grad ** 2
+        return self._Scheduler__log(self.eta0 / np.sqrt(self.epsilon + self.g2_t_avg))
 
 
 class StochasticGradientDescent:
@@ -10,8 +66,7 @@ class StochasticGradientDescent:
         batches=None,
         shuffle=True,
         seed=42,
-        learning_rate=lambda t, grad: 1e-3,
-        momentum=0,
+        learning_rate=Constant(),
         n_iter_no_change=5,
         tol=0.001,
     ):
@@ -20,20 +75,21 @@ class StochasticGradientDescent:
         self.shuffle = shuffle
         self.seed = seed
         self.learning_rate = learning_rate
-        self.momentum = momentum
         self.n_iter_no_change = n_iter_no_change
         self.tol = tol
         self.iteration = 0
 
     def minimize(self, loss_function, gradient_loss, X, y):
+
         # Toggle for reproducability
         if self.shuffle:
             np.random.seed(self.seed)
 
+        N = X.shape[0]
         if self.batches is None:
             # Assume vanilla stochastic gradient descent, i.e.
             # each minibatch has only one element
-            self.batches = X.shape[0]
+            self.batches = N
 
         # global minimization time, passed to the learning_rate functor
         self.iteration = 1
@@ -41,47 +97,47 @@ class StochasticGradientDescent:
 
         # fiducial initial loss
         best_loss = np.inf
-        # initial guess for parameters ~ U(0,1)
-        p = best_p = np.random.rand(X.shape[1])
 
+        # Same initial guess as in SGDRegressor
+        p = best_p = np.zeros(X.shape[1])
+
+        minibatch_boundaries = np.arange(0, N, N // self.batches)
+        if N % self.batches == 0:
+            minibatch_boundaries = np.hstack((minibatch_boundaries, N))
+        else:
+            minibatch_boundaries[-1] = N
+
+        # Merge X and y along the last dimension for combined shuffle.
+        # Note we could also use an 1D-array holding indices, say idx, and shuffle
+        # only idx. Advanced indexing, i.e. X[idx,:] and y[idx], would then
+        # yield the sought after, randomized mini batches. Unfortunately,
+        # advanced indexing implies a copy (and does not return a view), which
+        # makes a call to minimize roughly 18% slower if self.batches = N
+        # (we profiled it...a lot...)
+        Xy = np.c_[X, y]
         step = 0
         for epoch in range(self.max_epochs):
-            # initial index array from which minibatches will be formed
-            mini_batches = np.arange(X.shape[0])
 
             if self.shuffle:
-                np.random.shuffle(mini_batches)
+                # For reasons not enirely clear, using permutation instead of
+                # shuffle is 33% faster (compared to using shuffle) ¯\_(ツ)_/¯
+                Xy = np.random.permutation(Xy)
 
-            if X.shape[0] % self.batches != 0:
-                mini_batch_indices = np.array_split(mini_batches, self.batches)
-            else:
-                mini_batch_indices = mini_batches.reshape(self.batches, -1)
+            for i in range(minibatch_boundaries.shape[0] - 1):
+                start = minibatch_boundaries[i]
+                end = minibatch_boundaries[i + 1]
+                X_b = Xy[start:end, :-1]
+                y_b = Xy[start:end, -1]
 
-            # Learning rate is set by external, user-provided policy, dependent on
-            # optimization iteration (for e.g. inverse scaling) and/or past gradient
-            # (for e.g. RMSProp, ADAM, etc.).
-            for mini_batch_idx in mini_batch_indices:
-                # Advanced indexing implies a deep-copy. Thus, the order of
-                # observations in X stays untouched.
-                X_b = X[mini_batch_idx, :]
-                y_b = y[mini_batch_idx]
+                mean_minibatch_grad = 1.0 / X_b.shape[0] * gradient_loss(X_b, y_b, p)
 
-                grad = gradient_loss(X_b, y_b, p)
-
-                # Two types of of user policies are supported:
-                # (i) Generators with internal state (e.g. sum of past
-                # gradients)
-                if isinstance(self.learning_rate, types.GeneratorType):
-                    next(self.learning_rate)
-                    learning_rate = self.learning_rate.send(grad)
-                # (ii) lambdas acting as pure function, i.e. no internal state
-                else:
-                    learning_rate = self.learning_rate(self.iteration, grad)
-
-                step *= self.momentum
-                step += learning_rate * grad
-
-                p = p - step
+                # Learning rate is set by external, user-provided policy, dependent on
+                # optimization iteration (for e.g. inverse scaling) and/or past
+                # gradient (for e.g. RMSProp, ADAM, etc.).
+                p -= (
+                    self.learning_rate(self.iteration, mean_minibatch_grad)
+                    * mean_minibatch_grad
+                )
 
                 self.iteration += 1
 
@@ -94,7 +150,7 @@ class StochasticGradientDescent:
                 # is satisfied for n_iter_no_change epochs. Note that:
                 # (i) the *entire* trainings data is used to compute the loss
                 current_loss = loss_function(X, y, p)
-                if current_loss > best_loss - self.tol:
+                if current_loss > best_loss - self.tol * N:
                     epochs_wo_improvement += 1
                 if epochs_wo_improvement == self.n_iter_no_change:
                     return best_p
