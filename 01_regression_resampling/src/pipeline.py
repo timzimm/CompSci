@@ -1,5 +1,6 @@
 from transformation import Transformation
-from linear_model import Predictor
+from linear_model import RegressionBase
+from linear_model import ClassificationBase
 
 
 class Pipeline:
@@ -7,8 +8,11 @@ class Pipeline:
         for step in steps[:-1]:
             if not isinstance(step, Transformation):
                 raise TypeError("All intermediate steps should be Transformations.")
-        if not isinstance(steps[-1], Predictor):
-            raise TypeError("Final step must be an Predictor")
+        if not (
+            isinstance(steps[-1], RegressionBase)
+            or isinstance(steps[-1], ClassificationBase)
+        ):
+            raise TypeError("Final step must be RegressionBase or ClassificationBase")
         self.steps = steps
 
     def __fit_transform(self, X):
