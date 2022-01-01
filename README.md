@@ -7,8 +7,8 @@ Univeristy of Oslo.
 
 ## Overview
 
-**01_regression_resampling**: Regression Analysis and Resampling Methods
-**02_**: TBA
+**01_regression_resampling**: Regression Analysis and Resampling Methods<br/>
+**02_**: TBA<br/>
 **03_**: TBA
 
 For more information about the individual projects, check out the READMEs in the 
