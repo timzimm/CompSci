@@ -40,7 +40,11 @@ aspects
 **src/**: contains all implementation files (*.py) and jupyter notebooks used
 for the analysis and plot generation for the report.
 
-**doc/**: git submodule to the overleaf repo hosting the report (**TBA**).
+**doc/**: git submodule to the overleaf repo hosting the report
+
+**config/**: configuration files. Contains conda environment description
+
+**misc/**: whatever doesn't fit into the above, goes in here.
 
 ## What's not in the box? 
 Several dependencies are required:
