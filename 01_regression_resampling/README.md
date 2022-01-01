@@ -4,6 +4,12 @@
 This project has been carried out as part of the CompSci Doctoral Program at the
 Univeristy of Oslo.
 
+## How to get it?
+Since a submodule is involved, please run:
+```
+git clone --recurse-submodules https://github.com/timzimm/CompSci.git
+```
+
 ## What is it about?
 Purpose of this work is to illustrate the capabilities and theoretical
 properties of foundational, partially self-implemented, supervised learning methods
@@ -53,8 +59,3 @@ environment. For convenience, we provide a
 [conda environment file](./config/env.yml) to speed up the process of getting
 started.
 
-## How to get it?
-Since a submodule is involved, please run:
-```
-git clone --recurse-submodules https://github.com/timzimm/CompSci.git
-```
