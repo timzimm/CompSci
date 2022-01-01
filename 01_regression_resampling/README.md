@@ -1,9 +1,6 @@
 # CompSci Project 1: Regression Analysis and Resampling Methods
 **Auhors**: Kosio Beshkov (@KBeshkov), Mohamed E.A. Safy (@Msafy2021), Tim Zimmermann (@timzimm)
 
-This project has been carried out as part of the CompSci Doctoral Program at the
-Univeristy of Oslo.
-
 ## How to get it?
 Since a submodule is involved, please run:
 ```
