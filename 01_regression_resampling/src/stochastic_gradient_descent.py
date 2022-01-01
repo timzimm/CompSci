@@ -63,9 +63,9 @@ class StochasticGradientDescent:
     def __init__(
         self,
         max_epochs=1000,
-        batches=None,
+        batches=-1,
         shuffle=True,
-        seed=42,
+        seed=None,
         learning_rate=Constant(),
         n_iter_no_change=5,
         tol=0.001,
@@ -101,7 +101,7 @@ class StochasticGradientDescent:
             )
 
         N = X_train.shape[0]
-        if self.batches is None:
+        if self.batches == -1:
             # By default, assume vanilla stochastic gradient descent, i.e.
             # each minibatch has only one element
             self.batches = N

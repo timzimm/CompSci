@@ -3,7 +3,7 @@ from linear_model import RegressionBase
 from linear_model import ClassificationBase
 
 
-class Pipeline:
+class Pipeline(RegressionBase):
     def __init__(self, steps):
         for step in steps[:-1]:
             if not isinstance(step, Transformation):
@@ -33,6 +33,3 @@ class Pipeline:
 
     def predict(self, X):
         return self.steps[-1].predict(self.__transform(X))
-
-    def score(self, X, y):
-        return self.steps[-1].score(self.__transform(X), y)
