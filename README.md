@@ -12,5 +12,5 @@ Univeristy of Oslo.
 **03_**: TBA
 
 For more information about the individual projects, check out the READMEs in the 
-respective projectc folders.
+respective project folders.
 
