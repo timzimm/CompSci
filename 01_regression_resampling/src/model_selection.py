@@ -4,7 +4,6 @@ from sklearn.model_selection import train_test_split
 
 
 def prediction_error_CV(loss, predictor, X, y, nfolds=5):
-
     def split(X):
         idx = np.arange(N)
         folds = np.array_split(idx, nfolds)
@@ -44,13 +43,11 @@ def predicition_error_bootstrap(loss, predictor, X, y, B=50, decomp=True, **kwar
         y_pred[:, b] = predictor.fit(X_train_b, y_train_b).predict(X_test)
 
     y_test = y_test[:, np.newaxis]
-    prediction_error = np.mean(
-        np.mean(loss(y_test, y_pred), axis=1, keepdims=True))
+    prediction_error = np.mean(np.mean(loss(y_test, y_pred), axis=1, keepdims=True))
     if not decomp:
         return prediction_error
 
-    bias_noise = np.mean(
-        (y_test - np.mean(y_pred, axis=1, keepdims=True)) ** 2)
+    bias_noise = np.mean((y_test - np.mean(y_pred, axis=1, keepdims=True)) ** 2)
     variance = np.mean(np.var(y_pred, axis=1, keepdims=True))
 
     return prediction_error, bias_noise, variance
