@@ -31,8 +31,8 @@ class PiNN:
             # Output Layer is assumed to be linear
             self.output = nn.Linear(prev_nodes_per_layer, 1)
 
-        def forward(self, x, t):
-            return self.output(self.ff_graph(torch.cat((x, t), 1)))
+        def forward(self, *domain_points):
+            return self.output(self.ff_graph(torch.cat(domain_points, 1)))
 
     def __init__(self, pde, bc, ic, hyperparameters=None, verbose=False):
         super().__init__()
@@ -71,22 +71,16 @@ class PiNN:
 
         # Unpack the training data into interior/ic/bc points and set up the
         # minibatch indices
-        (
-            (x_int, t_int),
-            (x_init, t_init),
-            (x_boundary, x_boundary2, t_boundary),
-        ) = X_train
-        batchsize_int = x_int.shape[0]
-        batchsize_bc = x_boundary.shape[0]
-        batchsize_ic = x_init.shape[0]
+        domain_int, domain_ic, domain_bc = X_train
+        batchsize_int = domain_int.shape[0]
+        batchsize_bc = domain_bc.shape[0]
+        batchsize_ic = domain_ic.shape[0]
         number_of_minibatches = 1
 
         # Minibatch index set to iterate over
-        idx_int = np.array_split(np.arange(x_int.shape[0]), number_of_minibatches)
-        idx_init = np.array_split(np.arange(x_init.shape[0]), number_of_minibatches)
-        idx_boundary = np.array_split(
-            np.arange(x_boundary.shape[0]), number_of_minibatches
-        )
+        idx_int = np.array_split(np.arange(batchsize_int), number_of_minibatches)
+        idx_init = np.array_split(np.arange(batchsize_ic), number_of_minibatches)
+        idx_boundary = np.array_split(np.arange(batchsize_bc), number_of_minibatches)
 
         optimizer = torch.optim.LBFGS(self.net.parameters())
         loss_fn = torch.nn.MSELoss()
@@ -118,18 +112,23 @@ class PiNN:
         for e in range(self.epochs + 1):
             for minibatch in range(number_of_minibatches):
 
-                x = x_int[idx_int[minibatch], :]
-                t = t_int[idx_int[minibatch], :]
+                domain_int_batch = domain_int[idx_int[minibatch]]
+                coordinates_int_batch = [
+                    c.reshape(-1, 1) for c in torch.unbind(domain_int_batch, dim=-1)
+                ]
 
-                x_ic = x_init[idx_init[minibatch], :]
-                t_ic = t_init[idx_init[minibatch], :]
+                domain_ic_batch = domain_ic[idx_init[minibatch]]
+                coordinates_ic_batch = [
+                    c.reshape(-1, 1) for c in torch.unbind(domain_ic_batch, dim=-1)
+                ]
 
-                x_bc_0 = x_boundary[idx_boundary[minibatch], :]
-                x_bc_L = x_boundary2[idx_boundary[minibatch], :]
-                t_bc = t_boundary[idx_boundary[minibatch], :]
+                domain_bc_batch = domain_bc[idx_boundary[minibatch]]
+                coordinates_bc_batch = [
+                    c.reshape(-1, 1) for c in torch.unbind(domain_bc_batch, dim=-1)
+                ]
 
-                x.requires_grad_(True)
-                t.requires_grad_(True)
+                for coordinate in coordinates_int_batch:
+                    coordinate.requires_grad_(True)
 
                 last_total_loss_in_step = 0
                 last_interior_loss_in_step = 0
@@ -145,19 +144,18 @@ class PiNN:
                     optimizer.zero_grad()
 
                     # Interior
-                    u = self.net(x, t)
-                    mse_interior = loss_fn(self.pde(u, x, t), torch.zeros_like(u))
+                    u = self.net(*coordinates_int_batch)
+                    mse_interior = loss_fn(
+                        self.pde(u, *coordinates_int_batch), torch.zeros_like(u)
+                    )
 
                     # Boundary Condition
-                    u_bc_0 = self.net(x_bc_0, t_bc)
-                    u_bc_L = self.net(x_bc_L, t_bc)
-                    mse_boundary = loss_fn(
-                        u_bc_0, self.bc(u_bc_0, x_bc_0, t_bc)
-                    ) + loss_fn(u_bc_L, self.bc(u_bc_L, x_bc_L, t_bc))
+                    u_bc = self.net(*coordinates_bc_batch)
+                    mse_boundary = loss_fn(u_bc, self.bc(u_bc, *coordinates_bc_batch))
 
                     # Initial conditions
-                    u_ic = self.net(x_ic, t_ic)
-                    mse_ic = loss_fn(u_ic, self.ic(x_ic, t_ic))
+                    u_ic = self.net(*coordinates_ic_batch)
+                    mse_ic = loss_fn(u_ic, self.ic(*coordinates_ic_batch))
 
                     # Total Loss
                     loss = mse_interior + mse_boundary + mse_ic
@@ -193,6 +191,5 @@ class PiNN:
                     )
 
     def predict(self, X_test):
-        x, t = X_test
         with torch.autograd.no_grad():
-            return self.net(x, t)
+            return self.net(X_test)
