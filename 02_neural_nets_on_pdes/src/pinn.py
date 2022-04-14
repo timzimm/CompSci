@@ -16,10 +16,10 @@ def derivative(y, x):
 
 class PiNN:
     class NN(nn.Module):
-        def __init__(self, hidden_layers):
+        def __init__(self, input_dim, output_dim, hidden_layers):
             super().__init__()
 
-            prev_nodes_per_layer = 2
+            prev_nodes_per_layer = input_dim
             hidden = []
             for nodes_per_layer in hidden_layers:
 
@@ -29,17 +29,19 @@ class PiNN:
             self.ff_graph = nn.Sequential(*hidden)
 
             # Output Layer is assumed to be linear
-            self.output = nn.Linear(prev_nodes_per_layer, 1)
+            self.output = nn.Linear(prev_nodes_per_layer, output_dim)
 
         def forward(self, *domain_points):
             return self.output(self.ff_graph(torch.cat(domain_points, 1)))
 
-    def __init__(self, pde, bc, ic, hyperparameters=None, verbose=False):
-        super().__init__()
+    def __init__(self, pde, ic, bc, hyperparameters=None, verbose=False):
 
         self.pde = pde
-        self.bc = bc
         self.ic = ic
+        self.bc = bc
+
+        self.input_dim = pde.domain_dim
+        self.output_dim = pde.target_dim
 
         # Default Hyperparameters
         if hyperparameters is None:
@@ -57,7 +59,7 @@ class PiNN:
             self.mse_train = []
             self.report_after_e_epochs = min(self.epochs, 10)
 
-        self.net = self.NN(self.hidden_layers)
+        self.net = self.NN(self.input_dim, self.output_dim, self.hidden_layers)
 
     def __str__(self):
         model_parameters = filter(lambda p: p.requires_grad, self.net.parameters())
@@ -67,7 +69,7 @@ class PiNN:
 
     def fit(self, X_train, y_train):
         # Call to fit forces retraining
-        self.net = self.NN(self.hidden_layers)
+        self.net = self.NN(self.input_dim, self.output_dim, self.hidden_layers)
 
         # Unpack the training data into interior/ic/bc points and set up the
         # minibatch indices
@@ -145,17 +147,15 @@ class PiNN:
 
                     # Interior
                     u = self.net(*coordinates_int_batch)
-                    mse_interior = loss_fn(
-                        self.pde(u, *coordinates_int_batch), torch.zeros_like(u)
-                    )
+                    mse_interior = loss_fn(*self.pde(u, *coordinates_int_batch))
 
                     # Boundary Condition
                     u_bc = self.net(*coordinates_bc_batch)
-                    mse_boundary = loss_fn(u_bc, self.bc(u_bc, *coordinates_bc_batch))
+                    mse_boundary = loss_fn(*self.bc(u_bc, *coordinates_bc_batch))
 
                     # Initial conditions
                     u_ic = self.net(*coordinates_ic_batch)
-                    mse_ic = loss_fn(u_ic, self.ic(*coordinates_ic_batch))
+                    mse_ic = loss_fn(*self.ic(u_ic, *coordinates_ic_batch))
 
                     # Total Loss
                     loss = mse_interior + mse_boundary + mse_ic
