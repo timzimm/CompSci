@@ -8,9 +8,9 @@ def derivative(y, x):
     dydx = torch.zeros_like(y, dtype=y.dtype)
     for i in range(dim):
         yi = y[:, i].sum()
-        dydx[:, i] = torch.autograd.grad(yi, x, create_graph=True, allow_unused=True)[
-            0
-        ].squeeze()
+        dydx[:, i] = torch.autograd.grad(
+            yi ** (1.0), x, create_graph=True, allow_unused=True
+        )[0].squeeze()
     return dydx
 
 
@@ -34,7 +34,7 @@ class PiNN:
         def forward(self, *domain_points):
             return self.output(self.ff_graph(torch.cat(domain_points, 1)))
 
-    def __init__(self, pde, ic, bc, hyperparameters=None, verbose=False):
+    def __init__(self, pde, ic, bc, hyperparameters={}, verbose=False):
 
         self.pde = pde
         self.ic = ic
@@ -43,65 +43,78 @@ class PiNN:
         self.input_dim = pde.domain_dim
         self.output_dim = pde.target_dim
 
-        # Default Hyperparameters
-        if hyperparameters is None:
-            self.hidden_layers = [20, 20, 20]
-            self.epochs = 100
+        # Hyperparameters to be defined
+        self.hidden_layers = None
+        self.epochs = None
+        self.number_of_minibatches = None
+        self.optimizer = None
 
         # User-specified Hyperparameters
-        else:
-            for parameter, val in hyperparameters.items():
-                if hasattr(self, parameter):
-                    setattr(self, parameter, val)
+        for parameter, val in hyperparameters.items():
+            if hasattr(self, parameter):
+                setattr(self, parameter, val)
+
+        # Populate unset parameters with sane default values
+        self.hyperparameters_default = {
+            "hidden_layers": [20, 20, 20],
+            "epochs": 200,
+            "number_of_minibatches": 1,
+            "optimizer": "lbfgs",
+        }
+        for parameter, val in self.hyperparameters_default.items():
+            if getattr(self, parameter, val) is None:
+                setattr(self, parameter, val)
 
         self.verbose = verbose
         if self.verbose:
             self.mse_train = []
-            self.report_after_e_epochs = min(self.epochs, 10)
+            self.report_after_e_epochs = self.epochs // 10
 
         self.net = self.NN(self.input_dim, self.output_dim, self.hidden_layers)
 
     def __str__(self):
         model_parameters = filter(lambda p: p.requires_grad, self.net.parameters())
         params = sum([np.prod(p.size()) for p in model_parameters])
-        string = self.net.__str__() + f'{"# of model parameters:":<40}{params:>30}\n'
+
+        string = f'{"Model":-^70}\n'
+        string = self.net.__str__() + "\n"
+        string += f'{"model parameters:":<40}{params:>30}\n'
+        string += f'{"Hyperparameters":-^70}\n'
+        for parameter, val in self.hyperparameters_default.items():
+            string += f"{parameter:<40}{str(getattr(self, parameter, val)):>30}\n"
         return string
 
     def fit(self, X_train, y_train):
+
         # Call to fit forces retraining
         self.net = self.NN(self.input_dim, self.output_dim, self.hidden_layers)
 
         # Unpack the training data into interior/ic/bc points and set up the
         # minibatch indices
         domain_int, domain_ic, domain_bc = X_train
-        batchsize_int = domain_int.shape[0]
-        batchsize_bc = domain_bc.shape[0]
-        batchsize_ic = domain_ic.shape[0]
-        number_of_minibatches = 1
+        N_int = domain_int.shape[0]
+        N_bc = domain_bc.shape[0]
+        N_ic = domain_ic.shape[0]
 
         # Minibatch index set to iterate over
-        idx_int = np.array_split(np.arange(batchsize_int), number_of_minibatches)
-        idx_init = np.array_split(np.arange(batchsize_ic), number_of_minibatches)
-        idx_boundary = np.array_split(np.arange(batchsize_bc), number_of_minibatches)
+        idx_int = np.array_split(np.arange(N_int), self.number_of_minibatches)
+        idx_init = np.array_split(np.arange(N_ic), self.number_of_minibatches)
+        idx_boundary = np.array_split(np.arange(N_bc), self.number_of_minibatches)
 
-        optimizer = torch.optim.LBFGS(self.net.parameters())
         loss_fn = torch.nn.MSELoss()
 
+        if self.optimizer == "lbfgs":
+            optimizer = torch.optim.LBFGS(self.net.parameters())
+        elif self.optimizer == "adam":
+            optimizer = torch.optim.Adam(self.net.parameters())
+
         if self.verbose:
-            points_per_iteration = (
-                batchsize_int * batchsize_bc * batchsize_ic * number_of_minibatches
-            )
-            print(f'{"Hyperparameters":-^70}')
-            print(f'{"# of collocation points per batch:":<40}{batchsize_int:>30}')
-            print(f'{"# of boundary points per batch:":<40}{batchsize_bc:>30}')
-            print(f'{"# of initial condition points per batch:":<40}{batchsize_ic:>30}')
-            print(f'{"# of minbatches:":<40}{number_of_minibatches:>30}')
+            points_per_iteration = (N_int + N_bc + N_ic) / self.number_of_minibatches
+            print(f'{"Training Log":-^70}')
+            print(f'{"# of collocation points:":<40}{N_int:>30}')
+            print(f'{"# of boundary points:":<40}{N_bc:>30}')
+            print(f'{"# of initial condition:":<40}{N_ic:>30}')
             print(f'{"Points per Iteration:":<40}{points_per_iteration:>30}')
-            print(f'{"Iterations:":<40}{self.epochs:>30}')
-            print(
-                f'{"Total number of collocation points":<40}'
-                f"{self.epochs*points_per_iteration:>30}"
-            )
             print(f'{"":-^70}')
             print(
                 f'{"Epoch":^10}|'
@@ -111,8 +124,9 @@ class PiNN:
                 f'{"Loss (IC)":^15}'
             )
 
+        last_total_loss_in_epoch = np.inf
         for e in range(self.epochs + 1):
-            for minibatch in range(number_of_minibatches):
+            for minibatch in range(self.number_of_minibatches):
 
                 domain_int_batch = domain_int[idx_int[minibatch]]
                 coordinates_int_batch = [
@@ -132,16 +146,17 @@ class PiNN:
                 for coordinate in coordinates_int_batch:
                     coordinate.requires_grad_(True)
 
-                last_total_loss_in_step = 0
-                last_interior_loss_in_step = 0
-                last_bc_loss_in_step = 0
-                last_ic_loss_in_step = 0
+                total_loss_in_step = 0
+                interior_loss_in_step = 0
+                bc_loss_in_step = 0
+                ic_loss_in_step = 0
 
                 def compute_loss():
-                    nonlocal last_total_loss_in_step
-                    nonlocal last_interior_loss_in_step
-                    nonlocal last_bc_loss_in_step
-                    nonlocal last_ic_loss_in_step
+                    # For monitoring purposes. I know its a sin...sue me!
+                    nonlocal total_loss_in_step
+                    nonlocal interior_loss_in_step
+                    nonlocal bc_loss_in_step
+                    nonlocal ic_loss_in_step
 
                     optimizer.zero_grad()
 
@@ -162,10 +177,10 @@ class PiNN:
 
                     loss.backward()
 
-                    last_total_loss_in_step = loss.item()
-                    last_interior_loss_in_step = mse_interior.item()
-                    last_bc_loss_in_step = mse_boundary.item()
-                    last_ic_loss_in_step = mse_ic.item()
+                    total_loss_in_step = loss.item()
+                    interior_loss_in_step = mse_interior.item()
+                    bc_loss_in_step = mse_boundary.item()
+                    ic_loss_in_step = mse_ic.item()
 
                     # pytorch requires that only the total loss is returned from the closure
                     return loss
@@ -174,21 +189,27 @@ class PiNN:
             if self.verbose:
                 self.mse_train.append(
                     [
-                        last_total_loss_in_step,
-                        last_interior_loss_in_step,
-                        last_bc_loss_in_step,
-                        last_ic_loss_in_step,
+                        total_loss_in_step,
+                        interior_loss_in_step,
+                        bc_loss_in_step,
+                        ic_loss_in_step,
                     ]
                 )
 
                 if e % self.report_after_e_epochs == 0:
                     print(
                         f"{e:^10}|"
-                        f"{last_total_loss_in_step:>15.6e}|"
-                        f"{last_interior_loss_in_step:>15.6e}|"
-                        f"{last_bc_loss_in_step:>15.6e}|"
-                        f"{last_ic_loss_in_step:>15.6e}"
+                        f"{total_loss_in_step:^15.5e}|"
+                        f"{interior_loss_in_step:^15.5e}|"
+                        f"{bc_loss_in_step:^15.5e}|"
+                        f"{ic_loss_in_step:^15.5e}"
                     )
+            if np.abs(1.0 - total_loss_in_step / last_total_loss_in_epoch) < 1e-5:
+                if self.verbose:
+                    print(f"{f'Early Convergence after {e} epochs':-^70}")
+                break
+
+            last_total_loss_in_epoch = total_loss_in_step
 
     def predict(self, X_test):
         with torch.autograd.no_grad():
