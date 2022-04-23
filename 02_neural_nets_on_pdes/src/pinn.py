@@ -34,11 +34,26 @@ class PiNN:
         def forward(self, *domain_points):
             return self.output(self.ff_graph(torch.cat(domain_points, 1)))
 
-    def __init__(self, pde, ic, bc, hyperparameters={}, verbose=False):
+    def __init__(self, 
+                 pde, 
+                 ic, 
+                 bc, 
+                 solution_structure=lambda net_output, *domain_point: net_output,
+                 hooks=None,
+                 hyperparameters={}, 
+                 verbose=False):
 
         self.pde = pde
         self.ic = ic
         self.bc = bc
+        self.solution_structure = solution_structure
+        
+        # Functions used to monitor user-defined observables during the training
+        self.hooks = hooks
+        if self.hooks is not None:
+            self.hooks_returns = {}
+            for hook in self.hooks:
+                self.hooks_returns[hook.__name__] = []
 
         self.input_dim = pde.domain_dim
         self.output_dim = pde.target_dim
@@ -48,6 +63,7 @@ class PiNN:
         self.epochs = None
         self.number_of_minibatches = None
         self.optimizer = None
+        self.optimizer_params = {}
 
         # User-specified Hyperparameters
         for parameter, val in hyperparameters.items():
@@ -60,6 +76,7 @@ class PiNN:
             "epochs": 200,
             "number_of_minibatches": 1,
             "optimizer": "lbfgs",
+            "optimizer_params": None
         }
         for parameter, val in self.hyperparameters_default.items():
             if getattr(self, parameter, val) is None:
@@ -104,9 +121,9 @@ class PiNN:
         loss_fn = torch.nn.MSELoss()
 
         if self.optimizer == "lbfgs":
-            optimizer = torch.optim.LBFGS(self.net.parameters())
+            optimizer = torch.optim.LBFGS(self.net.parameters(), **self.optimizer_params)
         elif self.optimizer == "adam":
-            optimizer = torch.optim.Adam(self.net.parameters())
+            optimizer = torch.optim.Adam(self.net.parameters(), **self.optimizer_params)
 
         if self.verbose:
             points_per_iteration = (N_int + N_bc + N_ic) / self.number_of_minibatches
@@ -152,7 +169,6 @@ class PiNN:
                 ic_loss_in_step = 0
 
                 def compute_loss():
-                    # For monitoring purposes. I know its a sin...sue me!
                     nonlocal total_loss_in_step
                     nonlocal interior_loss_in_step
                     nonlocal bc_loss_in_step
@@ -161,16 +177,19 @@ class PiNN:
                     optimizer.zero_grad()
 
                     # Interior
-                    u = self.net(*coordinates_int_batch)
-                    mse_interior = loss_fn(*self.pde(u, *coordinates_int_batch))
+                    net_int = self.net(*coordinates_int_batch)
+                    u_int = self.solution_structure(net_int,*coordinates_int_batch)
+                    mse_interior = loss_fn(*self.pde(u_int,*coordinates_int_batch))
+                    
+                    # Initial conditions
+                    net_ic = self.net(*coordinates_ic_batch)
+                    u_ic = self.solution_structure(net_ic, *coordinates_ic_batch)
+                    mse_ic = loss_fn(*self.ic(u_ic, *coordinates_ic_batch))
 
                     # Boundary Condition
-                    u_bc = self.net(*coordinates_bc_batch)
+                    net_bc = self.net(*coordinates_bc_batch)
+                    u_bc = self.solution_structure(net_bc, *coordinates_bc_batch)
                     mse_boundary = loss_fn(*self.bc(u_bc, *coordinates_bc_batch))
-
-                    # Initial conditions
-                    u_ic = self.net(*coordinates_ic_batch)
-                    mse_ic = loss_fn(*self.ic(u_ic, *coordinates_ic_batch))
 
                     # Total Loss
                     loss = mse_interior + mse_boundary + mse_ic
@@ -195,6 +214,10 @@ class PiNN:
                         ic_loss_in_step,
                     ]
                 )
+                if self.hooks is not None:
+                    with torch.autograd.no_grad():
+                        for hook in self.hooks:
+                            self.hooks_returns[hook.__name__].append(hook(self.net))
 
                 if e % self.report_after_e_epochs == 0:
                     print(
@@ -204,7 +227,8 @@ class PiNN:
                         f"{bc_loss_in_step:^15.5e}|"
                         f"{ic_loss_in_step:^15.5e}"
                     )
-            if np.abs(1.0 - total_loss_in_step / last_total_loss_in_epoch) < 1e-5:
+            # Stop early if the relative error of the total loss is smaller than 1e-10
+            if np.abs(1.0 - total_loss_in_step / last_total_loss_in_epoch) < 1e-10:
                 if self.verbose:
                     print(f"{f'Early Convergence after {e} epochs':-^70}")
                 break
@@ -212,5 +236,10 @@ class PiNN:
             last_total_loss_in_epoch = total_loss_in_step
 
     def predict(self, X_test):
+        coordinates_Xtest = [
+                    c.reshape(-1, 1) for c in torch.unbind(X_test, dim=-1)
+        ]
         with torch.autograd.no_grad():
-            return self.net(X_test)
+            net_Xtest = self.net(X_test)
+            
+        return self.solution_structure(net_Xtest, *coordinates_Xtest)
