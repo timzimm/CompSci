@@ -40,6 +40,7 @@ class PiNN:
                  bc, 
                  solution_structure=lambda net_output, *domain_point: net_output,
                  hooks=None,
+                 events_for_loss=None,
                  hyperparameters={}, 
                  verbose=False):
 
@@ -54,6 +55,9 @@ class PiNN:
             self.hooks_returns = {}
             for hook in self.hooks:
                 self.hooks_returns[hook.__name__] = []
+                
+        # Events used to control the training
+        self.events_for_loss = events_for_loss
 
         self.input_dim = pde.domain_dim
         self.output_dim = pde.target_dim
@@ -101,7 +105,7 @@ class PiNN:
             string += f"{parameter:<40}{str(getattr(self, parameter, val)):>30}\n"
         return string
 
-    def fit(self, X_train, y_train):
+    def fit(self, X_train):
 
         # Call to fit forces retraining
         self.net = self.NN(self.input_dim, self.output_dim, self.hidden_layers)
@@ -141,7 +145,6 @@ class PiNN:
                 f'{"Loss (IC)":^15}'
             )
 
-        last_total_loss_in_epoch = np.inf
         for e in range(self.epochs + 1):
             for minibatch in range(self.number_of_minibatches):
 
@@ -227,13 +230,14 @@ class PiNN:
                         f"{bc_loss_in_step:^15.5e}|"
                         f"{ic_loss_in_step:^15.5e}"
                     )
-            # Stop early if the relative error of the total loss is smaller than 1e-10
-            if np.abs(1.0 - total_loss_in_step / last_total_loss_in_epoch) < 1e-10:
-                if self.verbose:
-                    print(f"{f'Early Convergence after {e} epochs':-^70}")
-                break
-
-            last_total_loss_in_epoch = total_loss_in_step
+            if self.events_for_loss is not None:
+                terminate_early = False
+                for event in self.events_for_loss:
+                    if event(total_loss_in_step) and event.terminate:
+                        if self.verbose:
+                            print(f"{event.__name__} fired terminal event after {e} epochs")
+                        terminate_early = True
+            if terminate_early: break
 
     def predict(self, X_test):
         coordinates_Xtest = [
