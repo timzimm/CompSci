@@ -1,0 +1,7 @@
+{
+  "layers": 3,
+  "lr": 0.005144876070099501,
+  "nodes": 34,
+  "number_of_minibatches": 1,
+  "optimizer_name": "adam"
+}

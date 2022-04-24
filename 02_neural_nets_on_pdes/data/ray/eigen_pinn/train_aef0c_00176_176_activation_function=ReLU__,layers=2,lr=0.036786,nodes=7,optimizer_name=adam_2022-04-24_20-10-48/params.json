@@ -1,0 +1,8 @@
+{
+  "activation_function": "ReLU()",
+  "layers": 2,
+  "lr": 0.03678633662868396,
+  "nodes": 7,
+  "number_of_minibatches": 1,
+  "optimizer_name": "adam"
+}

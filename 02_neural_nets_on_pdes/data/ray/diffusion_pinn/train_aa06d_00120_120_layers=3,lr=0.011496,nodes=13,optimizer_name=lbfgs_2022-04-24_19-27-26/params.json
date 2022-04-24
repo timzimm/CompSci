@@ -1,0 +1,7 @@
+{
+  "layers": 3,
+  "lr": 0.011496471262411377,
+  "nodes": 13,
+  "number_of_minibatches": 1,
+  "optimizer_name": "lbfgs"
+}

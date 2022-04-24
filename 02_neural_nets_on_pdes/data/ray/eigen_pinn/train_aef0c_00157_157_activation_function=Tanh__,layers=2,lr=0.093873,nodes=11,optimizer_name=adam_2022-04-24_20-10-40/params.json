@@ -1,0 +1,8 @@
+{
+  "activation_function": "Tanh()",
+  "layers": 2,
+  "lr": 0.09387299288204183,
+  "nodes": 11,
+  "number_of_minibatches": 1,
+  "optimizer_name": "adam"
+}
