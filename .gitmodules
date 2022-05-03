@@ -1,3 +1,6 @@
 [submodule "01_regression_resampling/doc"]
 	path = 01_regression_resampling/doc
 	url = https://git.overleaf.com/61af29fc87a011422110d683
+[submodule "02_neural_nets_on_pdes/doc"]
+	path = 02_neural_nets_on_pdes/doc
+	url = https://git.overleaf.com/622e06766dc6451a8eb9c1a4
