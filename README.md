@@ -14,7 +14,7 @@ git clone --recurse-submodules https://github.com/timzimm/CompSci.git
 ## Overview
 
 **01_regression_resampling**: Regression Analysis and Resampling Methods<br/>
-**02_**: TBA<br/>
+**02_neural_nets_on_pdes**: Solving Differential Equations with Neural Networks<br/>
 **03_**: TBA
 
 For more information about the individual projects, check out the READMEs in the 
