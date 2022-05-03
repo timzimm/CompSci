@@ -97,7 +97,7 @@ class PiNN:
             self.interior_loss_in_step = np.inf
             self.bc_loss_in_step = np.inf
             self.ic_loss_in_step = np.inf
-
+        
         self.net = self.NN(self.input_dim, self.output_dim, self.hidden_layers, self.activation_function)
         
         if self.optimizer_name == "lbfgs":

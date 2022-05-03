@@ -26,8 +26,13 @@ Several dependencies are required:
 - pytorch
 - ray tune
 - matplotlib/seaborn
+- tabular
 
 Please make sure that all dependcies are installed in your local python (3)
 environment. For convenience, we provide a conda environment file (TBA) to speed up the 
-process of getting started.
+process of getting started. 
+
+**Note**: If you run a Apple Silicon device like the authors additional tweaking
+beyond the environment recipe might be necessary to get pytorch and ray tune
+working. You are on your own on this one!
 
