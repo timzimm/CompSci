@@ -1,8 +1,0 @@
-{
-  "activation_function": "Tanh()",
-  "layers": 3,
-  "lr": 0.05692258479064706,
-  "nodes": 25,
-  "number_of_minibatches": 1,
-  "optimizer_name": "lbfgs"
-}

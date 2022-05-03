@@ -1,8 +1,0 @@
-{
-  "activation_function": "ReLU()",
-  "layers": 3,
-  "lr": 0.001094053195101249,
-  "nodes": 12,
-  "number_of_minibatches": 1,
-  "optimizer_name": "lbfgs"
-}

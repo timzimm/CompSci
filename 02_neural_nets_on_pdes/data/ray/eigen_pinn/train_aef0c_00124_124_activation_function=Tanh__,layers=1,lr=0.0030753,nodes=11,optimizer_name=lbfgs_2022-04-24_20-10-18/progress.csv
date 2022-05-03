@@ -1,3 +1,0 @@
-validation_loss,time_this_iter_s,done,timesteps_total,episodes_total,training_iteration,trial_id,experiment_id,date,timestamp,time_total_s,pid,hostname,node_ip,time_since_restore,timesteps_since_restore,iterations_since_restore,warmup_time
-8.013924598693848,0.0365290641784668,False,,,1,aef0c_00124,eae145f41a034bf6a0a75e99dc02a5de,2022-04-24_20-10-19,1650823819,0.0365290641784668,95856,marvin,127.0.0.1,0.0365290641784668,0,1,0.0021708011627197266
-7.459891319274902,0.05452990531921387,True,,,2,aef0c_00124,eae145f41a034bf6a0a75e99dc02a5de,2022-04-24_20-10-19,1650823819,0.09105896949768066,95856,marvin,127.0.0.1,0.09105896949768066,0,2,0.0021708011627197266
