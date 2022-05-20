@@ -12,7 +12,7 @@ class NoiseFittedGP(GaussianProcessRegressor):
     This will be added by NoiseFittedGP.
     """
 
-    def __init__(self, M=8 * args, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.kernel = self.kernel + WhiteKernel(noise_level=0.1)
         self.alpha = 0
@@ -24,15 +24,9 @@ class NoiseFittedGP(GaussianProcessRegressor):
         variance, and disable the WhiteKernel
         """
         super().fit(X, y)
-
         self.alpha = self.kernel_.k2.noise_level
         self.kernel_.k2.noise_level = 0
         return self
-
-    def log_marginal_likelihood_k(
-        self, k, theta=None, eval_gradient=False, clone_kernel=True
-    ):
-        pass
 
     def save(self, filename):
         """Serialzie model and store it at filename.
