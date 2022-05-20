@@ -1,3 +1,10 @@
+# Author: Jan Hendrik Metzen <jhm@informatik.uni-bremen.de>
+# License: BSD 3 clause
+# Modified: Tim Zimmermann <timzi@uio.no>
+# Modication Reason:
+# Implementation of a SymmetricKernel requires taking derivatives of
+# K(-X,X). This violates scikit-learns API contract.
+
 import numpy as np
 from scipy.spatial.distance import pdist, cdist, squareform
 
@@ -28,54 +35,6 @@ def _check_length_scale(X, length_scale):
 
 
 class ConstantKernel(StationaryKernelMixin, GenericKernelMixin, Kernel):
-    """Constant kernel.
-
-    Can be used as part of a product-kernel where it scales the magnitude of
-    the other factor (kernel) or as part of a sum-kernel, where it modifies
-    the mean of the Gaussian process.
-
-    .. math::
-        k(x_1, x_2) = constant\\_value \\;\\forall\\; x_1, x_2
-
-    Adding a constant kernel is equivalent to adding a constant::
-
-            kernel = RBF() + ConstantKernel(constant_value=2)
-
-    is the same as::
-
-            kernel = RBF() + 2
-
-
-    Read more in the :ref:`User Guide <gp_kernels>`.
-
-    .. versionadded:: 0.18
-
-    Parameters
-    ----------
-    constant_value : float, default=1.0
-        The constant value which defines the covariance:
-        k(x_1, x_2) = constant_value
-
-    constant_value_bounds : pair of floats >= 0 or "fixed", default=(1e-5, 1e5)
-        The lower and upper bound on `constant_value`.
-        If set to "fixed", `constant_value` cannot be changed during
-        hyperparameter tuning.
-
-    Examples
-    --------
-    >>> from sklearn.datasets import make_friedman2
-    >>> from sklearn.gaussian_process import GaussianProcessRegressor
-    >>> from sklearn.gaussian_process.kernels import RBF, ConstantKernel
-    >>> X, y = make_friedman2(n_samples=500, noise=0, random_state=0)
-    >>> kernel = RBF() + ConstantKernel(constant_value=2)
-    >>> gpr = GaussianProcessRegressor(kernel=kernel, alpha=5,
-    ...         random_state=0).fit(X, y)
-    >>> gpr.score(X, y)
-    0.3696...
-    >>> gpr.predict(X[:1,:], return_std=True)
-    (array([606.1...]), array([0.24...]))
-    """
-
     def __init__(self, constant_value=1.0, constant_value_bounds=(1e-5, 1e5)):
         self.constant_value = constant_value
         self.constant_value_bounds = constant_value_bounds
@@ -100,7 +59,6 @@ class ConstantKernel(StationaryKernelMixin, GenericKernelMixin, Kernel):
         eval_gradient : bool, default=False
             Determines whether the gradient with respect to the log of
             the kernel hyperparameter is computed.
-            Only supported when Y is None.
 
         Returns
         -------
@@ -109,7 +67,7 @@ class ConstantKernel(StationaryKernelMixin, GenericKernelMixin, Kernel):
 
         K_gradient : ndarray of shape (n_samples_X, n_samples_X, n_dims), \
             optional
-            The gradient of the kernel k(X, X) with respect to the log of the
+            The gradient of the kernel k(X, Y) with respect to the log of the
             hyperparameter of the kernel. Only returned when eval_gradient
             is True.
         """
@@ -165,46 +123,6 @@ class ConstantKernel(StationaryKernelMixin, GenericKernelMixin, Kernel):
 
 
 class WhiteKernel(StationaryKernelMixin, GenericKernelMixin, Kernel):
-    """White kernel.
-
-    The main use-case of this kernel is as part of a sum-kernel where it
-    explains the noise of the signal as independently and identically
-    normally-distributed. The parameter noise_level equals the variance of this
-    noise.
-
-    .. math::
-        k(x_1, x_2) = noise\\_level \\text{ if } x_i == x_j \\text{ else } 0
-
-
-    Read more in the :ref:`User Guide <gp_kernels>`.
-
-    .. versionadded:: 0.18
-
-    Parameters
-    ----------
-    noise_level : float, default=1.0
-        Parameter controlling the noise level (variance)
-
-    noise_level_bounds : pair of floats >= 0 or "fixed", default=(1e-5, 1e5)
-        The lower and upper bound on 'noise_level'.
-        If set to "fixed", 'noise_level' cannot be changed during
-        hyperparameter tuning.
-
-    Examples
-    --------
-    >>> from sklearn.datasets import make_friedman2
-    >>> from sklearn.gaussian_process import GaussianProcessRegressor
-    >>> from sklearn.gaussian_process.kernels import DotProduct, WhiteKernel
-    >>> X, y = make_friedman2(n_samples=500, noise=0, random_state=0)
-    >>> kernel = DotProduct() + WhiteKernel(noise_level=0.5)
-    >>> gpr = GaussianProcessRegressor(kernel=kernel,
-    ...         random_state=0).fit(X, y)
-    >>> gpr.score(X, y)
-    0.3680...
-    >>> gpr.predict(X[:2,:], return_std=True)
-    (array([653.0..., 592.1... ]), array([316.6..., 316.6...]))
-    """
-
     def __init__(self, noise_level=1.0, noise_level_bounds=(1e-5, 1e5)):
         self.noise_level = noise_level
         self.noise_level_bounds = noise_level_bounds
@@ -238,7 +156,7 @@ class WhiteKernel(StationaryKernelMixin, GenericKernelMixin, Kernel):
 
         K_gradient : ndarray of shape (n_samples_X, n_samples_X, n_dims),\
             optional
-            The gradient of the kernel k(X, X) with respect to the log of the
+            The gradient of the kernel with respect to the log of the
             hyperparameter of the kernel. Only returned when eval_gradient
             is True.
         """
@@ -292,68 +210,6 @@ class WhiteKernel(StationaryKernelMixin, GenericKernelMixin, Kernel):
 
 
 class RBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
-    """Radial-basis function kernel (aka squared-exponential kernel).
-
-    The RBF kernel is a stationary kernel. It is also known as the
-    "squared exponential" kernel. It is parameterized by a length scale
-    parameter :math:`l>0`, which can either be a scalar (isotropic variant
-    of the kernel) or a vector with the same number of dimensions as the inputs
-    X (anisotropic variant of the kernel). The kernel is given by:
-
-    .. math::
-        k(x_i, x_j) = \\exp\\left(- \\frac{d(x_i, x_j)^2}{2l^2} \\right)
-
-    where :math:`l` is the length scale of the kernel and
-    :math:`d(\\cdot,\\cdot)` is the Euclidean distance.
-    For advice on how to set the length scale parameter, see e.g. [1]_.
-
-    This kernel is infinitely differentiable, which implies that GPs with this
-    kernel as covariance function have mean square derivatives of all orders,
-    and are thus very smooth.
-    See [2]_, Chapter 4, Section 4.2, for further details of the RBF kernel.
-
-    Read more in the :ref:`User Guide <gp_kernels>`.
-
-    .. versionadded:: 0.18
-
-    Parameters
-    ----------
-    length_scale : float or ndarray of shape (n_features,), default=1.0
-        The length scale of the kernel. If a float, an isotropic kernel is
-        used. If an array, an anisotropic kernel is used where each dimension
-        of l defines the length-scale of the respective feature dimension.
-
-    length_scale_bounds : pair of floats >= 0 or "fixed", default=(1e-5, 1e5)
-        The lower and upper bound on 'length_scale'.
-        If set to "fixed", 'length_scale' cannot be changed during
-        hyperparameter tuning.
-
-    References
-    ----------
-    .. [1] `David Duvenaud (2014). "The Kernel Cookbook:
-        Advice on Covariance functions".
-        <https://www.cs.toronto.edu/~duvenaud/cookbook/>`_
-
-    .. [2] `Carl Edward Rasmussen, Christopher K. I. Williams (2006).
-        "Gaussian Processes for Machine Learning". The MIT Press.
-        <http://www.gaussianprocess.org/gpml/>`_
-
-    Examples
-    --------
-    >>> from sklearn.datasets import load_iris
-    >>> from sklearn.gaussian_process import GaussianProcessClassifier
-    >>> from sklearn.gaussian_process.kernels import RBF
-    >>> X, y = load_iris(return_X_y=True)
-    >>> kernel = 1.0 * RBF(1.0)
-    >>> gpc = GaussianProcessClassifier(kernel=kernel,
-    ...         random_state=0).fit(X, y)
-    >>> gpc.score(X, y)
-    0.9866...
-    >>> gpc.predict_proba(X[:2,:])
-    array([[0.8354..., 0.03228..., 0.1322...],
-           [0.7906..., 0.0652..., 0.1441...]])
-    """
-
     def __init__(self, length_scale=1.0, length_scale_bounds=(1e-5, 1e5)):
         self.length_scale = length_scale
         self.length_scale_bounds = length_scale_bounds
@@ -388,7 +244,6 @@ class RBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
         eval_gradient : bool, default=False
             Determines whether the gradient with respect to the log of
             the kernel hyperparameter is computed.
-            Only supported when Y is None.
 
         Returns
         -------
@@ -397,7 +252,7 @@ class RBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
 
         K_gradient : ndarray of shape (n_samples_X, n_samples_X, n_dims), \
                 optional
-            The gradient of the kernel k(X, X) with respect to the log of the
+            The gradient of the kernel with respect to the log of the
             hyperparameter of the kernel. Only returned when `eval_gradient`
             is True.
         """
@@ -445,16 +300,29 @@ class RBF(StationaryKernelMixin, NormalizedKernelMixin, Kernel):
 
 
 class SymmetricKernel1D(Kernel):
+    """The `SymmetricKernel1D` kernel takes one kernel :math:`k_1` and an
+    offset `o` and symmetrizes `k_1` around `o` via:
+    .. math::
+        k_{sym}(X, Y) = 0.5 * (k_1(-(X-o), Y-o) + k_1(X-o, Y-o))
+    functions drawn from a GP with `k_{sym}` are guaranteed to satisfy `f(x) =
+    f(-x)`. Not that SymmetricKernel1D is meant to be used for one dimensional
+    input spaces. Higher dimensional input spaces can be projected to lower
+    dimensional sub-spaces via `ProjectionKernel` and a composition of
+    `ProjectionKernel` and `SymmetricKernel1D` is therfore a canoncial use case.
+    Currently, `o` is not considered to be a tunable hyperparameter. Promoting
+    it to such would require to implement gradients with respect to the inputs
+    of the correlation function.
+    Parameters
+    ----------
+    k1 : Kernel
+        The base-kernel to symmetrize
+    k2 : Kernel
+        Center of symmetry
+    """
+
     def __init__(self, kernel, offset):
         self.kernel = kernel
         self.offset = offset
-
-    def get_params(self, deep=True):
-        params = dict(kernel=self.kernel, offset=self.offset)
-        if deep:
-            deep_items = self.kernel.get_params().items()
-            params.update(("kernel__" + k, val) for k, val in deep_items)
-        return params
 
     @property
     def hyperparameters(self):
@@ -522,6 +390,19 @@ class SymmetricKernel1D(Kernel):
 
 
 class ProjectionKernel(Kernel):
+    """The `ProjectionKernel` takes one kernel :math:`k` and a
+    projection matrix :math:`A` of rank :math:`M` and projects a higher dimensional
+    input space of dimension :math:`N` to the subspace encoded in :math:`A`:
+    .. math::
+        k_{P}(X, Y) = k(AX, AY)
+    Parameters
+    ----------
+    k : Kernel
+        The kernel applied in the lower dimensional subspace
+    A : Projection Matrix
+        Matrix with property :math:`AA = A`
+    """
+
     def __init__(self, kernel, A, tag=None):
         if not np.allclose(A @ A, A):
             raise ValueError("A is not a projection matrix")
@@ -581,7 +462,7 @@ class ProjectionKernel(Kernel):
             return self.kernel(X @ self.A.T, Y @ self.A.T, eval_gradient=eval_gradient)
 
     def diag(self, X):
-        return self.kernel.diag(X @ A.T)
+        return self.kernel.diag(X @ self.A.T)
 
     def __repr__(self):
         return "{0}({1}, {2})".format(
