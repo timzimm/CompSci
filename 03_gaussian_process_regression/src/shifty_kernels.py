@@ -9,7 +9,6 @@ import numpy as np
 from scipy.spatial.distance import pdist, cdist, squareform
 
 from sklearn.utils.validation import _num_samples
-from sklearn.exceptions import ConvergenceWarning
 
 from sklearn.gaussian_process.kernels import (
     Hyperparameter,
@@ -17,8 +16,6 @@ from sklearn.gaussian_process.kernels import (
     NormalizedKernelMixin,
     StationaryKernelMixin,
     GenericKernelMixin,
-    Sum,
-    Product,
 )
 
 
