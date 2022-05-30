@@ -1,4 +1,4 @@
-# CompSci Project 2: Gaussian Process Regression
+# CompSci Project 3: Gaussian Process Regression
 **Auhors**: Kosio Beshkov (@KBeshkov), Mohamed E.A. Safy (@Msafy2021), Tim Zimmermann (@timzimm)
 
 ## How to get it?
