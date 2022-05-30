@@ -8,10 +8,10 @@ git clone --recurse-submodules https://github.com/timzimm/CompSci.git
 ```
 
 ## What is it about?
-    This project investigates properties and shortcomings of 
-    gaussian processes (GP), a parameter-free,
-    probabilistic regression model for the prediction of high-dimensional data
-    generative processes. Our in-depth study may be split into three aspects:
+This project investigates properties and shortcomings of 
+gaussian processes (GP), a parameter-free,
+probabilistic regression model for the prediction of high-dimensional data
+generative processes. Our in-depth study may be split into three aspects:
 
 
 * **Kernel Design:** Guided by properties of a noisy Friedman
