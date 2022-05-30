@@ -5,6 +5,9 @@ from copy import deepcopy
 def squared_error(data, prediction):
     return (data - prediction) ** 2
 
+def mse(data, prediction):
+    return np.mean(squared_error(data, prediction), axis=0)
+
 
 def prediction_error_CV(loss, predictor, X, y, nfolds=5, return_best_predictor=False):
     def split(X):

@@ -5,10 +5,10 @@ from sklearn_gp import GaussianProcessRegressor
 from shifty_kernels import WhiteKernel, ConstantKernel, RBF
 import pickle
 import os
+from operator import itemgetter
 
 import numpy as np
 
-from operator import itemgetter
 
 from scipy.linalg import cholesky, cho_solve, solve_triangular
 
@@ -17,11 +17,13 @@ from sklearn.utils import check_random_state
 
 GPR_CHOLESKY_LOWER = True
 
-ray.init()
+ray.init(ignore_reinit_error=True)
 
 
 @ray.remote
-def predict_expert_(X, X_train_, y_train_, alpha_, L_, kernel_, return_std=False):
+def predict_expert_(
+    X, X_train_, y_train_, alpha_, L_, kernel_, return_std=False, return_cov=False
+):
 
     K_trans = kernel_(X, X_train_)
     y_mean = K_trans @ alpha_
@@ -40,6 +42,14 @@ def predict_expert_(X, X_train_, y_train_, alpha_, L_, kernel_, return_std=False
             y_var[y_var_negative] = 0.0
 
         return y_mean, np.sqrt(y_var)
+
+    if return_cov:
+        y_cov = kernel_(X) - V.T @ V
+
+        if y_cov.ndim > 2 and y_cov.shape[2] == 1:
+            y_cov = np.squeeze(y_cov, axis=2)
+
+        return y_mean, y_cov
     else:
         return (y_mean,)
 
@@ -67,13 +77,7 @@ def precompute_fixed_prediction_quantities_expert_(X_train_, y_train_, kernel_):
 
 @ray.remote
 def log_marginal_likelihood_expert_(
-    theta,
-    X_train_,
-    y_train_,
-    kernel,
-    alpha,
-    eval_gradient=False,
-    clone_kernel=True,
+    theta, X_train_, y_train_, kernel, alpha, eval_gradient=False
 ):
 
     kernel.theta = theta
@@ -145,45 +149,32 @@ class DistributedGaussianProcessRegressor(GaussianProcessRegressor):
             )
 
         self.kernel = self.kernel + WhiteKernel(noise_level=0.1)
+        self.kernel_ = clone(self.kernel)
 
-    def fit(self, X, y):
+    def fit(self, X=None, y=None):
         # Noise fitted by WhiteKernel
         self.alpha = 0
+        # Reinit the internal kernel
         self.kernel_ = clone(self.kernel)
 
         self._rng = check_random_state(self.random_state)
 
-        if self.kernel_.requires_vector_input:
-            dtype, ensure_2d = "numeric", True
-        else:
-            dtype, ensure_2d = None, False
-        X, y = self._validate_data(
-            X,
-            y,
-            multi_output=True,
-            y_numeric=True,
-            ensure_2d=ensure_2d,
-            dtype=dtype,
-        )
-
-        partition = np.array_split(np.arange(X.shape[0]), self.M)
-        self.X_train_ = []
-        self.y_train_ = []
-        for partition_k in partition:
-            self.X_train_.append(ray.put(X[partition_k, :]))
-            self.y_train_.append(ray.put(y[partition_k]))
+        if X is not None and y is not None:
+            self.set_training_data(X, y)
+        elif (X is None or y is None) and not hasattr(self, "X_train_"):
+            raise ValueError("training data unspecified")
+        elif X is None ^ y is None:
+            raise NotImplementedError("Either provide both X and y or nothing")
 
         # Choose hyperparameters based on maximizing the log-marginal
         # likelihood (potentially starting from several initial values)
 
         def obj_func(theta, eval_gradient=True):
             if eval_gradient:
-                lml, grad = self.log_marginal_likelihood(
-                    theta, eval_gradient=True, clone_kernel=False
-                )
+                lml, grad = self.log_marginal_likelihood(theta, eval_gradient=True)
                 return -lml, -grad
             else:
-                return -self.log_marginal_likelihood(theta, clone_kernel=False)
+                return -self.log_marginal_likelihood(theta)
 
         # First optimize starting from theta specified in kernel
         optima = [
@@ -216,21 +207,26 @@ class DistributedGaussianProcessRegressor(GaussianProcessRegressor):
 
         self.log_marginal_likelihood_value_ = -np.min(lml_values)
 
-        # Precompute predicition quantities only dependent on X_train
-        self.precomp_alpha_L_k = [
-            precompute_fixed_prediction_quantities_expert_.remote(
-                self.X_train_[k], self.y_train_[k], self.kernel_
-            )
-            for k in range(self.M)
-        ]
+        # This takes the data-inferred noise into account
+        self.precomp_alpha_L_k_()
 
         # Infer noise from data but always predict latent function
         self.alpha = self.kernel_.k2.noise_level
         self.kernel_.k2.noise_level = 0
 
+        # Put optimized kernel into object store to avoid copies at prediction
+        self.kernel_id = ray.put(self.kernel_)
+
         return self
 
     def log_marginal_likelihood(self, theta, **kwargs):
+        if not hasattr(self, "kernel_id"):
+            # Log marginal likelihood used at training stage
+            kernel_id = ray.put(self.kernel_)
+        else:
+            # Log marginal likelihood used on trained model. kernel is already in share
+            # memory
+            kernel_id = self.kernel_id
         # Block until all experts reported their log marginal likelihood values
         llm_k_values = ray.get(
             [
@@ -238,8 +234,8 @@ class DistributedGaussianProcessRegressor(GaussianProcessRegressor):
                     theta,
                     self.X_train_[k],
                     self.y_train_[k],
-                    self.kernel_,
-                    self.alpha,
+                    kernel_id,
+                    self.alpha,  # Either 0 (during fit) or noise_level (after fit)
                     **kwargs,
                 )
                 for k in range(self.M)
@@ -251,12 +247,29 @@ class DistributedGaussianProcessRegressor(GaussianProcessRegressor):
         else:
             return tuple(map(sum, zip(*llm_k_values)))
 
-    def predict(self, X, return_std=False, aggregation="rBCM"):
-        if not hasattr(self, "X_train_"):
+    # Precompute predicition quantities only dependent on X_train
+    # This function should not exists, but is required for benchmarking
+    def precomp_alpha_L_k_(self):
+        self.precomp_alpha_L_k = [
+            precompute_fixed_prediction_quantities_expert_.remote(
+                self.X_train_[k], self.y_train_[k], self.kernel_
+            )
+            for k in range(self.M)
+        ]
+
+    def predict(self, X, return_std=False, return_cov=False, aggregation="rBCM"):
+        if not hasattr(self, "kernel_id"):
             # Unfitted predictions are not supported
             raise NotImplementedError(
                 "DistributedGaussianProcessRegressor only "
                 "predicts for trained kernels"
+            )
+        if return_cov and self.M > 1:
+            raise NotImplementedError("Covariance not supported for M>1")
+        if return_std and return_cov:
+            raise ValueError(
+                "DistributedGaussianProcessRegressor only allows for either "
+                "return_std or return_cov, not both"
             )
 
         if self.M == 1:
@@ -266,11 +279,13 @@ class DistributedGaussianProcessRegressor(GaussianProcessRegressor):
             return ray.get(
                 predict_expert_.remote(
                     X,
-                    ray.get(self.X_train_[0]),
-                    ray.get(self.y_train_[0]),
-                    *ray.get(self.precomp_alpha_L_k[0]),
-                    self.kernel_,
+                    self.X_train_[0],
+                    self.y_train_[0],
+                    self.precomp_alpha_L_k[0][0],
+                    self.precomp_alpha_L_k[0][1],
+                    self.kernel_id,
                     return_std=return_std,
+                    return_cov=return_cov,
                 )
             )
 
@@ -285,8 +300,9 @@ class DistributedGaussianProcessRegressor(GaussianProcessRegressor):
                 self.y_train_[k],
                 self.precomp_alpha_L_k[k][0],
                 self.precomp_alpha_L_k[k][1],
-                self.kernel_,
+                self.kernel_id,
                 return_std=True,
+                return_cov=False,
             )
             for k in range(self.M)
         ]
@@ -330,16 +346,55 @@ class DistributedGaussianProcessRegressor(GaussianProcessRegressor):
         else:
             return mu
 
-    def save(self, filename):
-        self.filename = filename
-        with open(filename, "wb") as file:
-            pickle.dump(self, file)
+    def set_training_data(self, X, y):
+
+        # Validate data as in GaussianProcessRegressor
+        if self.kernel.requires_vector_input:
+            dtype, ensure_2d = "numeric", True
+        else:
+            dtype, ensure_2d = None, False
+        X, y = self._validate_data(
+            X,
+            y,
+            multi_output=True,
+            y_numeric=True,
+            ensure_2d=ensure_2d,
+            dtype=dtype,
+        )
+
+        # Naive partitioning. User can change that by preordering the data.
+        partition = np.array_split(np.arange(X.shape[0]), self.M)
+
+        self.X_train_ = []
+        self.y_train_ = []
+        for partition_k in partition:
+            self.X_train_.append(ray.put(X[partition_k, :]))
+            self.y_train_.append(ray.put(y[partition_k]))
 
     def get_training_data_k_(self, k):
         return ray.get(self.X_train_[k]), ray.get(self.y_train_[k])
 
+    def save(self, filename):
+        self.filename = filename
+
+        with open(filename, "wb") as file:
+            pickle.dump(self, file)
+
+        if self.X_train_ is not None:
+            with open(filename + "train", "wb") as file:
+                X_train = np.r_[ray.get(self.X_train_)].squeeze()
+                y_train = np.r_[ray.get(self.y_train_)].squeeze()
+                pickle.dump((X_train, y_train), file)
+
+        if self.precomp_alpha_L_k is not None:
+            with open(filename + "precomp", "wb") as file:
+                for alpha_l_k in self.precomp_alpha_L_k:
+                    pickle.dump(ray.get(alpha_l_k), file)
+
     @classmethod
     def load(cls, filename=None):
+        from os.path import exists
+
         filename = cls.filename if filename is None else filename
 
         with open(filename, "rb") as file:
@@ -350,70 +405,62 @@ class DistributedGaussianProcessRegressor(GaussianProcessRegressor):
                     "DistributedGaussianProcessRegressor!"
                 )
 
+        # User supplied training data either through a call to fit() or
+        # set_training_data(). Repopulate shared memory with it...
+        if exists(filename + "train"):
+            with open(filename + "train", "rb") as file:
+                X_train, y_train = pickle.load(file)
+
+            gp.set_training_data(X_train, y_train)
+
+        # For fitted models, pre-predicition data and the optimized kernel need
+        # to be re-put into the object store
+        if not hasattr(gp, "kernel_id"):
+            precomp_alpha_L_k = []
+            with open(filename + "precomp", "rb") as file:
+                for k in range(gp.M):
+                    precomp_alpha_L_k.append(pickle.load(file))
+
+            gp.precomp_alpha_L_k = [
+                [ray.put(precomp_alpha_L_k[k][0]), ray.put(precomp_alpha_L_k[k][1])]
+                for k in range(gp.M)
+            ]
+
+            gp.kernel_id = ray.put(gp.kernel_)
+
         return gp
 
 
 if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    import seaborn as sns
+    from common import noisy_friedman
+    from scipy.stats.qmc import LatinHypercube
+    from gaussian_process import NoiseFittedGP
 
-    def generate_data(x, sigma=0.25, seed=42):
-        N = x.shape[0]
-        return (
-            5 * x**2 * np.sin(12 * x)
-            + (x**3 - 0.5) * np.sin(3 * x - 0.5)
-            + 4 * np.cos(2 * x)
-            + np.random.default_rng(seed=seed).normal(0, scale=sigma, size=N)
-        )
+    N_train = 200
+    dim = 5
+    sigma = 0.7
 
-    N = 1000
-    Ntest = 100
-    X_train = np.random.rand(N)
-    X_test = np.linspace(-1.5, 2.5, Ntest)
-
-    y_train = generate_data(X_train)
+    X_train = LatinHypercube(dim).random(N_train)
+    y_train = noisy_friedman(X_train, sigma=sigma)
     y_train_mean = np.mean(y_train)
     y_train = y_train - y_train_mean
-    y_test = generate_data(X_test) - y_train_mean
 
-    X_train = X_train.reshape(-1, 1)
-    X_test = X_test.reshape(-1, 1)
+    kernel = ConstantKernel(constant_value=1) * RBF(length_scale=[0.1])
+    gp = NoiseFittedGP(kernel=kernel)
+    dgp = DistributedGaussianProcessRegressor(M=1, kernel=kernel)
 
-    hyperparameters = {"n_restarts_optimizer": 0}
-
-    M = 2
-    kernel = ConstantKernel() * RBF(length_scale=0.1)
-
-    print("start")
-    dgp = DistributedGaussianProcessRegressor(kernel=kernel, M=M, **hyperparameters)
-    dgp.fit(X_train, y_train)
-    print(dgp.kernel_)
-
-    gp = GaussianProcessRegressor(
-        kernel=kernel + WhiteKernel(), alpha=0, **hyperparameters
-    )
     gp.fit(X_train, y_train)
-    gp.alpha = gp.kernel_.k2.noise_level
-    gp.kernel_.k2.noise_level = 0
-    print(gp.kernel_)
+    dgp.fit(X_train, y_train)
+    print(gp.kernel_.theta)
+    print(dgp.kernel_.theta)
 
-    mu, sigma = gp.predict(X_test, return_std=True)
-    mu_dgp, sigma_dgp = dgp.predict(X_test, return_std=True, aggregation="rBCM")
+    gp.set_training_data(X_train, y_train)
+    dgp.set_training_data(X_train, y_train)
+    thetas = np.random.rand(10, 3)
+    for theta in thetas:
+        lml_gp, grad_gp = gp.log_marginal_likelihood(theta, eval_gradient=True)
+        lml_dgp, grad_dgp = dgp.log_marginal_likelihood(theta, eval_gradient=True)
+        assert np.allclose(lml_gp, lml_dgp)
+        assert np.allclose(grad_gp, grad_dgp)
 
-    fig, ax = plt.subplots()
-
-    sns.set_palette("Blues", M)
-    sns.set_palette("Blues", M)
-    for k in range(M):
-        X_train_k, y_train_k = dgp.get_training_data_k_(k)
-        X_train_k = X_train_k.squeeze()
-        ax.scatter(X_train_k, y_train_k, alpha=0.6, s=8)
-    ax.plot(X_test, mu, color="k")
-    ax.plot(X_test, mu + sigma, color="k", ls="dashed")
-    ax.plot(X_test, mu - sigma, color="k", ls="dashed")
-    ax.plot(X_test, mu_dgp, color="red")
-    ax.fill_between(
-        X_test.squeeze(), mu_dgp - sigma_dgp, mu_dgp + sigma_dgp, alpha=0.3, color="red"
-    )
-    ax.set_xlim([X_test.min(), X_test.max()])
-    plt.show()
+    print("All tests passed")

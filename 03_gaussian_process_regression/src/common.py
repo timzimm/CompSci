@@ -14,3 +14,9 @@ def noisy_friedman(x, sigma=0.1, seed=42):
 
     epsilon = default_rng(seed).normal(0, sigma, N)
     return f + epsilon
+
+# Generates trivial projection matrix in x_{direction} 
+def P(dim, direction):
+    P_x = np.zeros((dim,dim))
+    P_x[direction,direction] = 1
+    return P_x
