@@ -25,10 +25,10 @@ generative processes. Our in-depth study may be split into three aspects:
 
 * **Large Datasets:** The application of full GP regression is usually
     confined to small datasets due to the intrinsic time complexity of the
-    kernel training. Thus, we explore a \emph{product-of-expert} approximation of
-    the former in conjunction with a \emph{robust bayesian committee machine
-    aggregation} to distribute GPs beyond one execution thread. Our
-    implementation of the scheme outperforms \texttt{sklearn}'s
+    kernel training. Thus, we explore a product-of-expert approximation of
+    the former in conjunction with a robust bayesian committee machine
+    aggregation to distribute GPs beyond one execution thread. Our
+    implementation of the scheme outperforms sklearn's
     undistributed GP method in terms of runtime while maintaining its 
     predictive quality.
 
