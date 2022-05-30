@@ -39,6 +39,9 @@ for the analysis and plot generation for the report.
 
 **doc/**: git submodule to the overleaf repo hosting the report (TBA)
 
+**data/**: contains precomputed results used in the jupyter notebooks to
+circumvent log training runs
+
 **config/**: configuration files.
 
 **misc/**: whatever doesn't fit into the above, goes in here.
