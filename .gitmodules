@@ -4,3 +4,6 @@
 [submodule "02_neural_nets_on_pdes/doc"]
 	path = 02_neural_nets_on_pdes/doc
 	url = https://git.overleaf.com/622e06766dc6451a8eb9c1a4
+[submodule "03_gaussian_process_regression/doc"]
+	path = 03_gaussian_process_regression/doc
+	url = https://git.overleaf.com/627bb29c5087e194400089fe
