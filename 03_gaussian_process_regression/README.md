@@ -21,7 +21,12 @@ generative processes. Our in-depth study may be split into three aspects:
     based on the universal squared exponential kernel.
 
 * **Overconfidence and Extrapolation:** 
-    TBA
+    GPs have the advantage of providing not just a single estimate for the 
+    correct prediction, but rather a distribution over functions. 
+    From such a distribution one obtains a degree of confidence (belief) at each 
+    point of the predicted function. 
+    We explore when overconfidence occurs in GPs in the settings of predicting 
+    close to the training data (interpolation) and far away from it (extrapolation).
 
 * **Large Datasets:** The application of full GP regression is usually
     confined to small datasets due to the intrinsic time complexity of the
