@@ -42,7 +42,7 @@ generative processes. Our in-depth study may be split into three aspects:
 **src/**: contains all implementation files (*.py) and jupyter notebooks used
 for the analysis and plot generation for the report.
 
-**doc/**: git submodule to the overleaf repo hosting the report (TBA)
+**doc/**: git submodule to the overleaf repo hosting the report 
 
 **data/**: contains precomputed results used in the jupyter notebooks to
 circumvent log training runs
